@@ -1,0 +1,2 @@
+{"article_id": "s01", "kind": "keyword", "key": "imminent", "text": "Announcing that an official announcement is “imminent” lets the story claim future confirmation that never arrives; verified coverage reports what has already been confirmed.", "model": "sample", "prompt_version": "sample-v0"}
+{"article_id": "s03", "kind": "verdict", "key": "", "text": "The article is labeled True because the sequel is confirmed by a named studio chief at a public press event, with a release window, director and audited box-office figure.", "model": "sample", "prompt_version": "sample-v0"}

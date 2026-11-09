@@ -1,0 +1,7 @@
+# 웹 서버 실행에 필요한 최소 의존성
+fastapi
+uvicorn
+google-genai
+
+# 전체 파이프라인(전처리·진위·키워드·사건·추천)까지 돌리려면 추가로:
+# torch, transformers, sentence-transformers, hdbscan, spacy, captum, pandas, numpy, scikit-learn, torch-geometric

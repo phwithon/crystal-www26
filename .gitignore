@@ -1,0 +1,28 @@
+# 비밀키
+.env
+fact_check_api.py
+
+# 대용량 가중치·데이터 산출물
+crown/
+roberta_veracity/best/
+roberta_veracity/folds/
+roberta_veracity/*.csv
+roberta_veracity/*.json
+crystal/data/
+crystal/web/_cache/
+
+# 참고자료·작업 폴더
+_ref/
+_workspace/
+.claude/
+.idea/
+CLAUDE.md
+__pycache__/
+*.pyc
+*.pdf
+*.pptx
+*.docx
+*.png
+factcheck_*.json
+roberta_veracity/train.log
+roberta_veracity/*.zip
