@@ -23,6 +23,7 @@ __pycache__/
 *.pptx
 *.docx
 *.png
+*.zip
 factcheck_*.json
 roberta_veracity/train.log
 roberta_veracity/*.zip

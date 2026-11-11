@@ -1,32 +1,57 @@
-# 키워드·문장 색칠 파이프라인 (crystal/keyword)
+# Deceptive Keyword Identification (crystal/keyword)
 
-데모 기사 화면(B-2)에 칠해지는 **단어**와 **문장**을 만드는 코드입니다. 2026-11-03 기준 데모는 아래 "현재 데모" 방식을 씁니다.
+Implementation of Section 2.3 of the paper, *Deceptive Keyword Identification and Explanation* (the `Deceptive-Keyword Extraction` block in Figure 1). It produces the **deceptive keywords** and **sentences** highlighted on the article view (B-2), following the paper's five steps.
 
-## 현재 데모: ContextCite 문장 + 단서 사전 단어
+| Paper step (Sec. 2.3 / Figure 1) | Implementation | File |
+| --- | --- | --- |
+| ① Generate veracity label | 10-fold RoBERTa verdict (this model is the verdict) | `crystal/veracity/` |
+| ② Token attribution — IG/LIME Attribution | Token attribution toward the predicted label | `ig.py`, `lime_words.py` |
+| ③ Cue Filtering | Keep only highly attributed tokens explainable as **deception cues**, collected into a cue lexicon; **person names excluded** | `lexicon.py` |
+| ④ Sentence Attribution | Rank verdict-contributing sentences via ContextCite-style ablation | `contextcite.py` |
+| ⑤ LLM explanation | Keyword/article rationales, plus claim contrast when an opposing-veracity article exists | `crystal/rationale/` |
+
+The final highlight file is assembled by `build_highlights.py`, which merges the top sentences (④) and cue words (③) into `cc_keywords.jsonl`; the web app applies it when `CRYSTAL_KEYWORDS=cc`.
 
 ```
 articles.jsonl ─┬─ mask_names.py ──► masked.csv ──► roberta_veracity/train_masked.py ──► fold0_masked/best
-                │                                                              │
-                └──────────────────────────── contextcite.py (문장 기여도, 상위 5개) ◄──┘
+                │        (auxiliary model that removes person-name influence during ② attribution)        │
+                └──────────────────────────── contextcite.py (④ sentence attribution, top 5) ◄────────────┘
                                                       │
                                              cc_sentences_top5.jsonl
                                                       │
-                                   build_highlights.py  +  lexicon.py (단서 사전)
+                                   build_highlights.py  +  lexicon.py (③ cue lexicon)
                                                       │
-                                      cc_keywords.jsonl  (+ 설명 캐시)
+                                      cc_keywords.jsonl  (+ rationale cache)
                                                       │
-                                CRYSTAL_KEYWORDS=cc 로 웹 서버 실행 → 기사 화면 색칠
+                                run the web server with CRYSTAL_KEYWORDS=cc → article highlighting
 ```
 
-| 단계 | 파일 | 하는 일 |
-| --- | --- | --- |
-| 1 | `mask_names.py` | spaCy로 인물명(PERSON)을 `[NAME]`으로 가린 제목·본문 csv를 만든다. 원래 모델이 특정 인물명을 가짜 신호로 크게 쓰기 때문. |
-| 2 | `../../roberta_veracity/train_masked.py` | 가린 텍스트로 fold0 RoBERTa를 다시 학습한다(기여도 계산 전용, test acc 0.8489). **판정은 원래 10-fold 모델을 그대로 쓴다.** |
-| 3 | `contextcite.py` | ContextCite 방식을 분류기에 맞게 직접 구현. 문장을 무작위로 지운 입력 256개의 판정 log-odds를 LASSO로 맞춰 문장별 기여도를 구하고 상위 5개를 원문 좌표로 저장. |
-| 4 | `lexicon.py` | 사람이 정한 단서 사전. FAKE 목록(익명 출처·추측·과장·비속어·감정 단어) / TRUE 목록(성명·대변인·확인·공식 기록·본인 게시·인터뷰·날짜·언론사)과 단어별 설명 템플릿. |
-| 5 | `build_highlights.py` | 문장(본문 길이에 따라 1~5개, 붙어 있으면 다음 순위로 대체) + 단어(판정 라벨 쪽 목록만, 문장 안 단어 제외, 최대 15개) → `cc_keywords.jsonl`. 단어 설명은 템플릿으로 캐시에 넣는다. |
+## ② Token Attribution (IG/LIME Attribution)
 
-실행 순서(전부 프로젝트 루트에서, Windows PowerShell은 앞에 `$env:KMP_DUPLICATE_LIB_OK='TRUE'`):
+`ig.py` (Integrated Gradients + spaCy phrase expansion; the `CRYSTAL_KEYWORDS` default `ig`) and `lime_words.py` (top-K LIME word attribution) compute each token's attribution toward the predicted label. These attributions reveal which words and phrases drive the verdict, and they are the basis for building the cue lexicon in ③.
+
+**Person-name masking (paper: *person names are excluded*).** The original model uses certain person names (e.g., Bieber, Gomez) as strong signals regardless of veracity. To remove this, the attribution model is trained separately on name-masked text — `mask_names.py` uses spaCy to replace person entities (PERSON) with `[NAME]` and writes a CSV, and `../../roberta_veracity/train_masked.py` trains the `fold0_masked` model on that text (for attribution / sentence ablation only, test acc 0.8489). **The verdict itself still comes from the original 10-fold model.**
+
+## ③ Cue Filtering — `lexicon.py`
+
+Among the tokens attributed highly in ②, only those **explainable as deception cues** are kept and collected into a cue lexicon. **Person names**, which score high regardless of veracity, are excluded.
+
+- **FAKE list**: anonymous sourcing, hedging, exaggeration, profanity, emotion words
+- **TRUE list**: named statements, spokespersons, confirmation, official records, first-person posts, interviews, dates, news outlets
+
+Each entry is a (regex, explanation template) pair. During highlighting, only the list matching the **predicted label** is matched against the body, and the word explanations are written to the cache from the templates.
+
+## ④ Sentence Attribution — `contextcite.py`
+
+A ContextCite-style method adapted to a classifier, implemented directly. It fits a LASSO linear surrogate from the verdict log-odds of 256 inputs with sentences randomly ablated, obtains per-sentence contributions, and stores the top 5 in original-text coordinates. Because a few words rarely suffice to explain a verdict (paper Sec. 2.3), sentence-level evidence is highlighted as well.
+
+## ⑤ Assembly — `build_highlights.py`
+
+Merges sentences (1–5 depending on body length; replaced by the next-ranked one if adjacent/overlapping) and cue words (only the predicted-label list, excluding words inside highlighted sentences, up to 15) into `cc_keywords.jsonl`. Word explanations go to the cache from the ③ templates; sentence- and article-level explanations are produced by the ⑤ LLM (`crystal/rationale/`).
+
+## Run order
+
+Run everything from the project root (on Windows PowerShell, prefix with `$env:KMP_DUPLICATE_LIB_OK='TRUE'`).
 
 ```
 python -X utf8 crystal/keyword/mask_names.py
@@ -36,18 +61,9 @@ python -X utf8 crystal/keyword/build_highlights.py
 $env:CRYSTAL_KEYWORDS='cc'; python -X utf8 -m uvicorn crystal.web.app:app --port 8765
 ```
 
-`ids.json`은 대상 article_id 목록(JSON 배열)입니다. 데모에서는 두 데모 사용자의 피드 10페이지 + 관련 기사 393건을 썼습니다.
+`ids.json` is a list of target article_ids (a JSON array). For the demo we used the two demo users' 10 feed pages plus 393 related articles.
 
-## 단서 후보 보기: IG / LIME (참고용)
-
-| 파일 | 하는 일 |
-| --- | --- |
-| `ig.py`, `expand.py`, `run.py` | Integrated Gradients 단어 기여도 + spaCy 구 확장(초기 버전, `CRYSTAL_KEYWORDS` 기본값 `ig`). |
-| `lime_words.py` | LIME 단어 기여도 top-K를 본문 좌표로 저장(`lime_masked_keywords.jsonl` 형식). |
-
-IG/LIME 결과는 어떤 단어가 판정을 끌고 가는지 보는 데 썼고, 최종 색칠 단어는 그 후보를 보고 사람이 정한 `lexicon.py` 사전으로 매칭합니다.
-
-## 산출 파일 형식 (`cc_keywords.jsonl`, 한 줄 = 한 기사)
+## Output format (`cc_keywords.jsonl`, one line = one article)
 
 ```json
 {"article_id": "gossipcop-7455413235", "final_label": 1, "method": "contextcite+lexicon",
@@ -55,4 +71,4 @@ IG/LIME 결과는 어떤 단어가 판정을 끌고 가는지 보는 데 썼고,
               {"phrase": "(sic),’ wrote one fan ...", "field": "body", "start": 1756, "end": 1839, "score": 1.0, "sentence": "...", "kind": "sentence"}]}
 ```
 
-`kind`가 `sentence`면 문장 색칠, `lexicon`이면 단어 색칠입니다. 설명 문구는 `crystal/data/rationale_cache_lime_masked.jsonl`에 `(article_id, kind=keyword, key=phrase)`로 저장되고, 없으면 웹에서 Gemini가 생성합니다.
+`kind` `sentence` is a sentence highlight (④), `lexicon` is a cue-word highlight (③). Explanations are stored in `crystal/data/rationale_cache_lime_masked.jsonl` keyed by `(article_id, kind=keyword, key=phrase)`; if absent, the LLM generates them in the web app (⑤).
