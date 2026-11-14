@@ -4,7 +4,7 @@ Code for our **WWW Companion '27** paper (The ACM Web Conference 2027, Demo Trac
 Personalized news recommendation is agnostic to whether articles are true, so users consume fake news without noticing it. CRYSTAL is an interactive web system that mitigates this by **predicting and explaining veracity and letting users explore opposing-veracity coverage**. Across three levels — feed, article, and event — it surfaces veracity so that fake news is kept *visible, explained, and correctable* rather than silently filtered out.
 
 - Live demo: https://crystal-1-2wtv.onrender.com/
-- Demo video: https://youtu.be/CTDt7pn6cRk
+- Demo video: https://youtu.be/h9e88wSg0Ak?si=bX4D1wSt1wAq5VPp
 
 ---
 
